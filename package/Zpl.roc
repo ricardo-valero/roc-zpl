@@ -13,38 +13,38 @@ enum = \flag ->
                 Black -> "B"
                 White -> "W"
 
-        Orientation t ->
+        Rotation t ->
             when t is
-                O0 -> "N" # normal
-                O90 -> "R" # rotate 90 degrees clockwise
-                O180 -> "I" # inverted 180 degrees
-                O270 -> "B" # bottom-up, 270 degrees
+                R0 -> "N" # normal
+                R90 -> "R" # rotate 90 degrees clockwise
+                R180 -> "I" # inverted 180 degrees
+                R270 -> "B" # bottom-up, 270 degrees
 
-barcode = \data, b, { dpi ? D150 }, { fw ? O0 } ->
+barcode = \data, type, { dpi ? D150 }, { fw ? R0 } ->
     Str.concat
         "^B"
         (
-            when b is
+            when type is
                 # (read s Fw)
-                Aztec { orientation ? fw, scale ? spec (MaxDpi dpi), eci ? "N", size ? 0, readerInit ? "N", symbols ? 1, id ? 0 } ->
+                Aztec { rotation ? fw, scale ? spec (MaxDpi dpi), eci ? "N", size ? 0, readerInit ? "N", symbols ? 1, id ? 0 } ->
                     Str.concat
                         "0"
                         (
-                            [enum (Orientation orientation), Num.toStr scale, eci, Num.toStr size, readerInit, Num.toStr symbols, Num.toStr id]
+                            [enum (Rotation rotation), Num.toStr scale, eci, Num.toStr size, readerInit, Num.toStr symbols, Num.toStr id]
                             |> Str.joinWith ","
                         )
                     |> Str.concat (enum (FieldData data))
 
-                Code11 { orientation, checkDigit, height, line, lineAbove } ->
-                    Str.concat "1" ([orientation, checkDigit, Num.toStr height, line, lineAbove] |> Str.joinWith ",")
+                Code11 { rotation ? fw, checkDigit, height, line, lineAbove } ->
+                    Str.concat "1" ([enum (Rotation rotation), checkDigit, Num.toStr height, line, lineAbove] |> Str.joinWith ",")
                     |> Str.concat (enum (FieldData data))
 
-                Interleaved2Of5 { orientation, height, line, lineAbove, checkDigit } ->
-                    Str.concat "2" ([orientation, Num.toStr height, line, lineAbove, checkDigit] |> Str.joinWith ",")
+                Interleaved2Of5 { rotation ? fw, height, line, lineAbove, checkDigit } ->
+                    Str.concat "2" ([enum (Rotation rotation), Num.toStr height, line, lineAbove, checkDigit] |> Str.joinWith ",")
                     |> Str.concat (enum (FieldData data))
 
-                Code39 { orientation, checkDigit, height, line, lineAbove } ->
-                    Str.concat "3" ([orientation, checkDigit, Num.toStr height, line, lineAbove] |> Str.joinWith ",")
+                Code39 { rotation ? fw, checkDigit, height, line, lineAbove } ->
+                    Str.concat "3" ([enum (Rotation rotation), checkDigit, Num.toStr height, line, lineAbove] |> Str.joinWith ",")
                     |> Str.concat (enum (FieldData data))
 
                 # model 2 only, ^FW has no effect on rotation
@@ -74,22 +74,22 @@ barcode = \data, b, { dpi ? D150 }, { fw ? O0 } ->
         )
 
 expect
-    actual = barcode " 7. This is testing label 7" (Aztec { orientation: O90, scale: 7 }) {} {}
+    actual = barcode " 7. This is testing label 7" (Aztec { rotation: R90, scale: 7 }) {} {}
     expected = "^B0R,7,N,0,N,1,0^FD 7. This is testing label 7"
     actual == expected
 
 expect
-    actual = barcode "123456" (Code11 { orientation: "N", checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
+    actual = barcode "123456" (Code11 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
     expected = "^B1N,N,150,Y,N^FD123456"
     actual == expected
 
 expect
-    actual = barcode "123456" (Interleaved2Of5 { orientation: "N", checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
+    actual = barcode "123456" (Interleaved2Of5 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
     expected = "^B2N,150,Y,N,N^FD123456"
     actual == expected
 
 expect
-    actual = barcode "123456" (Code39 { orientation: "N", checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
+    actual = barcode "123456" (Code39 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
     expected = "^B3N,N,150,Y,N^FD123456"
     actual == expected
 
@@ -116,11 +116,11 @@ read = \s, prop ->
         Fw -> s |> .fw
         Dpi -> s |> .dpi
 
-graphic = \t ->
+graphic = \type ->
     Str.concat
         "^G"
         (
-            when t is
+            when type is
                 Box { width ? 1, height ? 1, thickness ? 1, color ? Black, rounding ? 0 } ->
                     # TODO: how to use thickness default for width and height?
                     Str.concat
@@ -176,7 +176,7 @@ graphic = \t ->
                             |> Str.joinWith (",")
                         )
 
-                Symbol { orientation ? O0, char } ->
+                Symbol { rotation ? R0, char } ->
                     d =
                         enum
                             (
@@ -193,7 +193,7 @@ graphic = \t ->
                     Str.concat
                         "S"
                         (
-                            [enum (Orientation orientation)] # TODO: How to get the last CF value for Num.toStr height, Num.toStr width
+                            [enum (Rotation rotation)] # TODO: How to get the last CF value for Num.toStr height, Num.toStr width
                             |> Str.joinWith (",")
                             |> Str.concat d
                         )
