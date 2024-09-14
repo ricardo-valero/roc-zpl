@@ -6,6 +6,7 @@ enum = \flag ->
         FormatEnd -> "^XZ"
         FieldOrigin -> "^FO"
         FieldSeparator -> "^FS"
+        FieldReverse -> "^FR"
         FieldData data -> "^FD" |> Str.concat data
         Font (height, width) -> "^A0N,$(Num.toStr height),$(Num.toStr width)"
         Color t ->
@@ -20,19 +21,22 @@ enum = \flag ->
                 R180 -> "I" # inverted 180 degrees
                 R270 -> "B" # bottom-up, 270 degrees
 
-barcode = \data, type, { dpi ? D150 }, { fw ? R0 } ->
+font = \{ name, rotation, height, width } ->
+    Str.concat
+        "^A$(name)"
+        (
+            [enum (Rotation rotation), Num.toStr height, Num.toStr width]
+            |> Str.joinWith ""
+        )
+
+barcode = \data, type, { dpi ? D150, fw ? R0 } ->
     Str.concat
         "^B"
         (
             when type is
                 # (read s Fw)
                 Aztec { rotation ? fw, scale ? spec (MaxDpi dpi), eci ? "N", size ? 0, readerInit ? "N", symbols ? 1, id ? 0 } ->
-                    Str.concat
-                        "0"
-                        (
-                            [enum (Rotation rotation), Num.toStr scale, eci, Num.toStr size, readerInit, Num.toStr symbols, Num.toStr id]
-                            |> Str.joinWith ","
-                        )
+                    Str.concat "0" ([enum (Rotation rotation), Num.toStr scale, eci, Num.toStr size, readerInit, Num.toStr symbols, Num.toStr id] |> Str.joinWith ",")
                     |> Str.concat (enum (FieldData data))
 
                 Code11 { rotation ? fw, checkDigit, height, line, lineAbove } ->
@@ -47,15 +51,15 @@ barcode = \data, type, { dpi ? D150 }, { fw ? R0 } ->
                     Str.concat "3" ([enum (Rotation rotation), checkDigit, Num.toStr height, line, lineAbove] |> Str.joinWith ",")
                     |> Str.concat (enum (FieldData data))
 
-                # model 2 only, ^FW has no effect on rotation
+                # model 2 only, rotation has no effect
                 QrCode { model ? 2, scale, errorCorrection ? Standard, dataInput ? Automatic } ->
-                    e =
+                    ec =
                         when errorCorrection is
                             UltraHighReliability -> "H"
                             HighReliability -> "Q"
                             Standard -> "M"
                             HighDensity -> "L"
-                    d =
+                    di =
                         (
                             when dataInput is
                                 Automatic -> ["A", ""]
@@ -70,31 +74,31 @@ barcode = \data, type, { dpi ? D150 }, { fw ? R0 } ->
                         |> Str.joinWith ","
 
                     Str.concat "Q" (["", Num.toStr model, Num.toStr scale] |> Str.joinWith ",")
-                    |> Str.concat (enum (FieldData ([e, d, data] |> Str.joinWith "")))
+                    |> Str.concat (enum (FieldData ([ec, di, data] |> Str.joinWith "")))
         )
 
 expect
-    actual = barcode " 7. This is testing label 7" (Aztec { rotation: R90, scale: 7 }) {} {}
+    actual = barcode " 7. This is testing label 7" (Aztec { rotation: R90, scale: 7 }) {}
     expected = "^B0R,7,N,0,N,1,0^FD 7. This is testing label 7"
     actual == expected
 
 expect
-    actual = barcode "123456" (Code11 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
+    actual = barcode "123456" (Code11 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {}
     expected = "^B1N,N,150,Y,N^FD123456"
     actual == expected
 
 expect
-    actual = barcode "123456" (Interleaved2Of5 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
+    actual = barcode "123456" (Interleaved2Of5 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {}
     expected = "^B2N,150,Y,N,N^FD123456"
     actual == expected
 
 expect
-    actual = barcode "123456" (Code39 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {} {}
+    actual = barcode "123456" (Code39 { checkDigit: "N", height: 150, line: "Y", lineAbove: "N" }) {}
     expected = "^B3N,N,150,Y,N^FD123456"
     actual == expected
 
 expect
-    actual = barcode "AC-42" (QrCode { scale: 10, dataInput: Manual Alphanumeric }) {} {}
+    actual = barcode "AC-42" (QrCode { scale: 10, dataInput: Manual Alphanumeric }) {}
     expected = "^BQ,2,10^FDMM,AAC-42"
     actual == expected
 
@@ -123,45 +127,21 @@ graphic = \type ->
             when type is
                 Box { width ? 1, height ? 1, thickness ? 1, color ? Black, rounding ? 0 } ->
                     # TODO: how to use thickness default for width and height?
-                    Str.concat
-                        "B"
-                        (
-                            [Num.toStr width, Num.toStr height, Num.toStr thickness, enum (Color color), Num.toStr rounding]
-                            |> Str.joinWith ","
-                        )
+                    Str.concat "B" ([Num.toStr width, Num.toStr height, Num.toStr thickness, enum (Color color), Num.toStr rounding] |> Str.joinWith ",")
 
-                Circle { diameter, thickness, color ? Black } ->
-                    # TODO: clamp numbers like diameter 3 to 4095 as spec
-                    Str.concat
-                        "C"
-                        (
-                            [Num.toStr diameter, Num.toStr thickness, enum (Color color)]
-                            |> Str.joinWith ","
-                        )
-
-                DiagonalLine { width, height, thickness, color ? Black, leaning ? Right } ->
-                    Str.concat
-                        "D"
-                        (
-                            [
-                                Num.toStr width,
-                                Num.toStr height,
-                                Num.toStr thickness,
-                                enum (Color color),
-                                when leaning is
-                                    Right -> "R"
-                                    Left -> "L",
-                            ]
-                            |> Str.joinWith ","
-                        )
+                Circle { width, thickness, color ? Black } ->
+                    # TODO: clamp numbers like width 3 to 4095 as spec
+                    Str.concat "C" ([Num.toStr width, Num.toStr thickness, enum (Color color)] |> Str.joinWith ",")
 
                 Ellipse { width, height, thickness, color ? Black } ->
-                    Str.concat
-                        "E"
-                        (
-                            [Num.toStr width, Num.toStr height, Num.toStr thickness, enum (Color color)]
-                            |> Str.joinWith ","
-                        )
+                    Str.concat "E" ([Num.toStr width, Num.toStr height, Num.toStr thickness, enum (Color color)] |> Str.joinWith ",")
+
+                DiagonalLine { width, height, thickness, color ? Black, leaning ? Right } ->
+                    l =
+                        when leaning is
+                            Right -> "R"
+                            Left -> "L"
+                    Str.concat "D" ([Num.toStr width, Num.toStr height, Num.toStr thickness, enum (Color color), l] |> Str.joinWith ",")
 
                 Field { format ? Ascii, dataBytes, totalBytes, rowBytes, data } ->
                     f =
@@ -169,34 +149,20 @@ graphic = \type ->
                             Ascii -> "A"
                             Binary -> "B"
                             Compressed -> "C"
-                    Str.concat
-                        "F"
-                        (
-                            [f, Num.toStr dataBytes, Num.toStr totalBytes, Num.toStr rowBytes, data]
-                            |> Str.joinWith (",")
-                        )
+                    Str.concat "F" ([f, Num.toStr dataBytes, Num.toStr totalBytes, Num.toStr rowBytes, data] |> Str.joinWith (","))
 
                 Symbol { rotation ? R0, char } ->
                     d =
-                        enum
-                            (
-                                FieldData
-                                    (
-                                        when char is
-                                            RegisteredTradeMark -> "A"
-                                            Copyright -> "B"
-                                            TradeMark -> "C"
-                                            UnderwritersLaboratoriesApproval -> "D"
-                                            CanadianStandardsAssociationApproval -> "E"
-                                    )
-                            )
-                    Str.concat
-                        "S"
-                        (
-                            [enum (Rotation rotation)] # TODO: How to get the last CF value for Num.toStr height, Num.toStr width
-                            |> Str.joinWith (",")
-                            |> Str.concat d
-                        )
+                        when char is
+                            RegisteredTradeMark -> "A"
+                            Copyright -> "B"
+                            TradeMark -> "C"
+                            UnderwritersLaboratoriesApproval -> "D"
+                            CanadianStandardsAssociationApproval -> "E"
+
+                    # TODO: How to get the last CF value for Num.toStr height, Num.toStr width
+                    Str.concat "S" ([enum (Rotation rotation)] |> Str.joinWith (","))
+                    |> Str.concat (enum (FieldData d))
         )
 
 expect
@@ -204,7 +170,7 @@ expect
     expected = "^GB200,100,8,B,0"
     actual == expected
 expect
-    actual = graphic (Circle { diameter: 100, thickness: 4 })
+    actual = graphic (Circle { width: 100, thickness: 4 })
     expected = "^GC100,4,B"
     actual == expected
 expect
@@ -229,7 +195,7 @@ expect
 create = \elem ->
     when elem is
         Graphic x -> graphic x
-        Barcode (x, y) -> barcode x y {} {}
+        Barcode (x, y) -> barcode x y {}
         Text opt ->
             { fontSize, content } = opt
             "$(enum (Font fontSize))$(enum (FieldData content))"
